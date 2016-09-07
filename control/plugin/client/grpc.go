@@ -220,11 +220,12 @@ func (g *grpcClient) Process(metrics []core.Metric, config map[string]ctypes.Con
 	return mts, nil
 }
 
-func (g *grpcClient) CollectMetrics(mts []core.Metric) ([]core.Metric, error) {
+func (g *grpcClient) CollectMetrics(mts []core.Metric,
+	deadline time.Duration) ([]core.Metric, error) {
 	arg := &rpc.MetricsArg{
 		Metrics: NewMetrics(mts),
 	}
-	reply, err := g.collector.CollectMetrics(getContext(g.timeout), arg)
+	reply, err := g.collector.CollectMetrics(getContext(deadline), arg)
 
 	if err != nil {
 		return nil, err

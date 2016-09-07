@@ -661,8 +661,12 @@ func (p *pluginControl) ValidateDeps(requested []core.RequestedMetric, plugins [
 // SubscribeDeps will subscribe to collectors, processors and publishers.  The collectors are subscribed by mapping the provided
 // array of core.RequestedMetrics to the corresponding plugins while processors and publishers provided in the array of core.Plugin
 // will be subscribed directly.  The ID provides a logical grouping of subscriptions.
-func (p *pluginControl) SubscribeDeps(id string, requested []core.RequestedMetric, plugins []core.SubscribedPlugin, configTree *cdata.ConfigDataTree) (serrs []serror.SnapError) {
-	return p.subscriptionGroups.Add(id, requested, configTree, plugins)
+func (p *pluginControl) SubscribeDeps(id string,
+	requested []core.RequestedMetric,
+	plugins []core.SubscribedPlugin,
+	configTree *cdata.ConfigDataTree) (serrs []serror.SnapError) {
+	//TODO(CDR): Add passing through time.duration
+	return p.subscriptionGroups.Add(id, requested, configTree, plugins, time.Second*5)
 }
 
 // UnsubscribeDeps unsubscribes a group of dependencies provided the subscription group ID
@@ -898,6 +902,15 @@ func (p *pluginControl) CollectMetrics(id string, allTags map[string]map[string]
 		}
 	}
 
+	deadline, err := p.subscriptionGroups.GetDeadline(id)
+	if err != nil {
+		controlLogger.WithFields(log.Fields{
+			"_block":                "CollectorMetrics",
+			"subscription-group-id": id,
+		}).Error(err)
+		errs = append(errs, err)
+		return
+	}
 	for ns, nsTags := range allTags {
 		for k, v := range nsTags {
 			log.WithFields(log.Fields{
@@ -933,7 +946,7 @@ func (p *pluginControl) CollectMetrics(id string, allTags map[string]map[string]
 		wg.Add(1)
 
 		go func(pluginKey string, mt []core.Metric) {
-			mts, err := p.pluginRunner.AvailablePlugins().collectMetrics(pluginKey, mt, id)
+			mts, err := p.pluginRunner.AvailablePlugins().collectMetrics(pluginKey, mt, id, deadline)
 			if err != nil {
 				cError <- err
 			} else {

@@ -141,7 +141,8 @@ func (h *httpJSONRPCClient) Kill(reason string) error {
 }
 
 // CollectMetrics returns collected metrics
-func (h *httpJSONRPCClient) CollectMetrics(mts []core.Metric) ([]core.Metric, error) {
+func (h *httpJSONRPCClient) CollectMetrics(mts []core.Metric,
+	_ time.Duration) ([]core.Metric, error) {
 	var results []core.Metric
 	if len(mts) == 0 {
 		return nil, errors.New("no metrics to collect")

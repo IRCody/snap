@@ -372,7 +372,10 @@ func (ap *availablePlugins) getPool(key string) (strategy.Pool, serror.SnapError
 	return pool, nil
 }
 
-func (ap *availablePlugins) collectMetrics(pluginKey string, metricTypes []core.Metric, taskID string) ([]core.Metric, error) {
+func (ap *availablePlugins) collectMetrics(pluginKey string,
+	metricTypes []core.Metric,
+	taskID string,
+	deadline time.Duration) ([]core.Metric, error) {
 	var results []core.Metric
 	pool, serr := ap.getPool(pluginKey)
 	if serr != nil {
@@ -407,14 +410,18 @@ func (ap *availablePlugins) collectMetrics(pluginKey string, metricTypes []core.
 		return nil, serr
 	}
 
+	avail, ok := p.(*availablePlugin)
+	if !ok {
+		return nil, serror.New(errors.New("Unable to cast to availablePlugin"))
+	}
+
 	// cast client to PluginCollectorClient
-	cli, ok := p.(*availablePlugin).client.(client.PluginCollectorClient)
+	cli, ok := avail.client.(client.PluginCollectorClient)
 	if !ok {
 		return nil, serror.New(errors.New("unable to cast client to PluginCollectorClient"))
 	}
-
 	// collect metrics
-	metrics, err := cli.CollectMetrics(metricsToCollect)
+	metrics, err := cli.CollectMetrics(metricsToCollect, deadline)
 	if err != nil {
 		return nil, serror.New(err)
 	}

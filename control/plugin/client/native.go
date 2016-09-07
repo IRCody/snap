@@ -191,7 +191,16 @@ func (p *PluginNativeClient) Process(metrics []core.Metric, config map[string]ct
 
 }
 
-func (p *PluginNativeClient) CollectMetrics(mts []core.Metric) ([]core.Metric, error) {
+func enforceDeadline(p *PluginNativeClient, dl time.Duration, done chan struct{}) {
+	select {
+	case <-time.After(dl):
+		p.Kill("Deadline has passed")
+	case <-done:
+	}
+}
+
+func (p *PluginNativeClient) CollectMetrics(mts []core.Metric,
+	deadline time.Duration) ([]core.Metric, error) {
 	// Convert core.MetricType slice into plugin.nMetricType slice as we have
 	// to send structs over RPC
 	var results []core.Metric
@@ -218,7 +227,10 @@ func (p *PluginNativeClient) CollectMetrics(mts []core.Metric) ([]core.Metric, e
 	}
 
 	var reply []byte
+	done := make(chan struct{})
+	go enforceDeadline(p, deadline, done)
 	err = p.connection.Call("Collector.CollectMetrics", out, &reply)
+	close(done)
 	if err != nil {
 		return nil, err
 	}

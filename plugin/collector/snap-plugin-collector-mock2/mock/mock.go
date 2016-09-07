@@ -49,7 +49,12 @@ func (f *Mock) CollectMetrics(mts []plugin.MetricType) ([]plugin.MetricType, err
 	for _, p := range mts {
 		log.Printf("collecting %+v\n", p)
 	}
-
+	n := 0
+	for {
+		time.Sleep(time.Second)
+		fmt.Println(n)
+		n++
+	}
 	rand.Seed(time.Now().UTC().UnixNano())
 	metrics := []plugin.MetricType{}
 	for i := range mts {

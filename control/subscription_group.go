@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/intelsdi-x/snap/core"
 	"github.com/intelsdi-x/snap/core/cdata"
@@ -48,9 +49,11 @@ var (
 // manage subscription groups.
 type ManagesSubscriptionGroups interface {
 	Process() (errs []serror.SnapError)
-	Add(id string, requested []core.RequestedMetric,
+	Add(id string,
+		requested []core.RequestedMetric,
 		configTree *cdata.ConfigDataTree,
-		plugins []core.SubscribedPlugin) []serror.SnapError
+		plugins []core.SubscribedPlugin,
+		deadline time.Duration) []serror.SnapError
 	Get(id string) ([]core.Metric, []serror.SnapError, error)
 	Remove(id string) []serror.SnapError
 	ValidateDeps(requested []core.RequestedMetric,
@@ -58,6 +61,7 @@ type ManagesSubscriptionGroups interface {
 		configTree *cdata.ConfigDataTree) (serrs []serror.SnapError)
 	validateMetric(
 		metric core.Metric) (serrs []serror.SnapError)
+	GetDeadline(id string) (time.Duration, error)
 }
 
 type subscriptionGroup struct {
@@ -77,6 +81,8 @@ type subscriptionGroup struct {
 	// subscription groups are processed when the subscription group is added
 	// and when plugins are loaded/unloaded
 	errors []serror.SnapError
+	// deadline is the duration for each section in this workflow
+	deadline time.Duration
 }
 
 type subscriptionMap map[string]*subscriptionGroup
@@ -96,8 +102,8 @@ func newSubscriptionGroups(control *pluginControl) *subscriptionGroups {
 }
 
 // Add adds a subscription group provided a subscription group id, requested
-// metrics, config tree and plugins. The requested metrics are mapped to
-// collector plugins which are then combined with the provided (processor and
+// metrics, config tree, plugins, and deadline. The requested metrics are mapped
+// to collector plugins which are then combined with the provided (processor and
 // publisher) plugins.  The provided config map is used to construct the
 // []core.Metric which will be used during collect calls made against the
 // subscription group.
@@ -105,18 +111,22 @@ func newSubscriptionGroups(control *pluginControl) *subscriptionGroups {
 // `ErrSubscriptionGroupAlreadyExists` is returned if the subscription already
 // exists.  Also, if there are errors mapping the requested metrics to plugins
 // those are returned.
-func (s subscriptionGroups) Add(id string, requested []core.RequestedMetric,
+func (s subscriptionGroups) Add(id string,
+	requested []core.RequestedMetric,
 	configTree *cdata.ConfigDataTree,
-	plugins []core.SubscribedPlugin) []serror.SnapError {
+	plugins []core.SubscribedPlugin,
+	deadline time.Duration) []serror.SnapError {
 	s.Lock()
 	defer s.Unlock()
-	errs := s.add(id, requested, configTree, plugins)
+	errs := s.add(id, requested, configTree, plugins, deadline)
 	return errs
 }
 
-func (s subscriptionGroups) add(id string, requested []core.RequestedMetric,
+func (s subscriptionGroups) add(id string,
+	requested []core.RequestedMetric,
 	configTree *cdata.ConfigDataTree,
-	plugins []core.SubscribedPlugin) []serror.SnapError {
+	plugins []core.SubscribedPlugin,
+	deadline time.Duration) []serror.SnapError {
 	if _, ok := s.subscriptionMap[id]; ok {
 		return []serror.SnapError{serror.New(ErrSubscriptionGroupAlreadyExists)}
 	}
@@ -126,6 +136,7 @@ func (s subscriptionGroups) add(id string, requested []core.RequestedMetric,
 		requestedPlugins: plugins,
 		configTree:       configTree,
 		pluginControl:    s.pluginControl,
+		deadline:         deadline,
 	}
 
 	errs := subscriptionGroup.process(id)
@@ -170,6 +181,17 @@ func (s subscriptionGroups) get(id string) ([]core.Metric, []serror.SnapError, e
 	}
 	sg := s.subscriptionMap[id]
 	return sg.metrics, sg.errors, nil
+}
+
+// GetDeadline returns the deadline that was set for this subscriptiongroup
+func (s subscriptionGroups) GetDeadline(id string) (time.Duration, error) {
+	s.Lock()
+	defer s.Unlock()
+	if _, ok := s.subscriptionMap[id]; !ok {
+		return 0, ErrSubscriptionGroupDoesNotExist
+	}
+	sg := s.subscriptionMap[id]
+	return sg.deadline, nil
 }
 
 // Process compares the new set of plugins with the previous set of plugins
