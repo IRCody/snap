@@ -664,9 +664,14 @@ func (p *pluginControl) ValidateDeps(requested []core.RequestedMetric, plugins [
 func (p *pluginControl) SubscribeDeps(id string,
 	requested []core.RequestedMetric,
 	plugins []core.SubscribedPlugin,
-	configTree *cdata.ConfigDataTree) (serrs []serror.SnapError) {
-	//TODO(CDR): Add passing through time.duration
-	return p.subscriptionGroups.Add(id, requested, configTree, plugins, time.Second*5)
+	configTree *cdata.ConfigDataTree,
+	deadline time.Duration) (serrs []serror.SnapError) {
+	return p.subscriptionGroups.Add(
+		id,
+		requested,
+		configTree,
+		plugins,
+		deadline)
 }
 
 // UnsubscribeDeps unsubscribes a group of dependencies provided the subscription group ID
@@ -986,15 +991,31 @@ func (p *pluginControl) CollectMetrics(id string, allTags map[string]map[string]
 }
 
 // PublishMetrics
-func (p *pluginControl) PublishMetrics(metrics []core.Metric, config map[string]ctypes.ConfigValue, taskID, pluginName string, pluginVersion int) []error {
+func (p *pluginControl) PublishMetrics(
+	metrics []core.Metric,
+	config map[string]ctypes.ConfigValue,
+	taskID,
+	pluginName string,
+	pluginVersion int) []error {
 	// If control is not started we don't want tasks to be able to
 	// go through a workflow.
 	if !p.Started {
 		return []error{ErrControllerNotStarted}
 	}
+	deadline, err := p.subscriptionGroups.GetDeadline(taskID)
+	if err != nil {
+		controlLogger.WithFields(log.Fields{
+			"_block":                "PublishMetrics",
+			"subscription-group-id": taskID,
+		}).Error(err)
+		return []error{err}
+	}
 	// merge global plugin config into the config for this request
 	// without over-writing the task specific config
-	cfg := p.Config.Plugins.getPluginConfigDataNode(core.PublisherPluginType, pluginName, pluginVersion).Table()
+	cfg := p.Config.Plugins.getPluginConfigDataNode(
+		core.PublisherPluginType,
+		pluginName,
+		pluginVersion).Table()
 	merged := make(map[string]ctypes.ConfigValue)
 	for k, v := range cfg {
 		merged[k] = v
@@ -1003,19 +1024,41 @@ func (p *pluginControl) PublishMetrics(metrics []core.Metric, config map[string]
 		merged[k] = v
 	}
 
-	return p.pluginRunner.AvailablePlugins().publishMetrics(metrics, pluginName, pluginVersion, merged, taskID)
+	return p.pluginRunner.AvailablePlugins().publishMetrics(
+		metrics,
+		pluginName,
+		pluginVersion,
+		merged,
+		taskID,
+		deadline)
 }
 
 // ProcessMetrics
-func (p *pluginControl) ProcessMetrics(metrics []core.Metric, config map[string]ctypes.ConfigValue, taskID, pluginName string, pluginVersion int) ([]core.Metric, []error) {
+func (p *pluginControl) ProcessMetrics(
+	metrics []core.Metric,
+	config map[string]ctypes.ConfigValue,
+	taskID,
+	pluginName string,
+	pluginVersion int) ([]core.Metric, []error) {
 	// If control is not started we don't want tasks to be able to
 	// go through a workflow.
 	if !p.Started {
 		return nil, []error{ErrControllerNotStarted}
 	}
+	deadline, err := p.subscriptionGroups.GetDeadline(taskID)
+	if err != nil {
+		controlLogger.WithFields(log.Fields{
+			"_block":                "ProcessMetrics",
+			"subscription-group-id": taskID,
+		}).Error(err)
+		return nil, []error{err}
+	}
 	// merge global plugin config into the config for this request
 	// without over-writing the task specific config
-	cfg := p.Config.Plugins.getPluginConfigDataNode(core.ProcessorPluginType, pluginName, pluginVersion).Table()
+	cfg := p.Config.Plugins.getPluginConfigDataNode(
+		core.ProcessorPluginType,
+		pluginName,
+		pluginVersion).Table()
 	merged := make(map[string]ctypes.ConfigValue)
 	for k, v := range cfg {
 		merged[k] = v
@@ -1024,7 +1067,13 @@ func (p *pluginControl) ProcessMetrics(metrics []core.Metric, config map[string]
 		merged[k] = v
 	}
 
-	return p.pluginRunner.AvailablePlugins().processMetrics(metrics, pluginName, pluginVersion, merged, taskID)
+	return p.pluginRunner.AvailablePlugins().processMetrics(
+		metrics,
+		pluginName,
+		pluginVersion,
+		merged,
+		taskID,
+		deadline)
 }
 
 func (p *pluginControl) SetAutodiscoverPaths(paths []string) {

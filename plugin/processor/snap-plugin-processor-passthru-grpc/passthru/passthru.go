@@ -20,6 +20,9 @@ limitations under the License.
 package passthru
 
 import (
+	"fmt"
+	"time"
+
 	log "github.com/Sirupsen/logrus"
 
 	"github.com/intelsdi-x/snap-plugin-lib-go/v1/plugin"
@@ -46,6 +49,12 @@ func (p *passthruProcessor) GetConfigPolicy() (plugin.ConfigPolicy, error) {
 }
 
 func (p *passthruProcessor) Process(metrics []plugin.Metric, config plugin.Config) ([]plugin.Metric, error) {
+	n := 1
+	for {
+		fmt.Println(n)
+		time.Sleep(time.Second)
+		n++
+	}
 	log.SetFormatter(&log.TextFormatter{DisableTimestamp: true})
 	if _, err := config.GetBool(debug); err == nil {
 		log.SetLevel(log.DebugLevel)

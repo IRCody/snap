@@ -188,24 +188,30 @@ func (g *grpcClient) Kill(reason string) error {
 	return nil
 }
 
-func (g *grpcClient) Publish(metrics []core.Metric, config map[string]ctypes.ConfigValue) error {
+func (g *grpcClient) Publish(
+	metrics []core.Metric,
+	config map[string]ctypes.ConfigValue,
+	deadline time.Duration) error {
 	arg := &rpc.PubProcArg{
 		Metrics: NewMetrics(metrics),
 		Config:  ToConfigMap(config),
 	}
-	_, err := g.publisher.Publish(getContext(g.timeout), arg)
+	_, err := g.publisher.Publish(getContext(deadline), arg)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (g *grpcClient) Process(metrics []core.Metric, config map[string]ctypes.ConfigValue) ([]core.Metric, error) {
+func (g *grpcClient) Process(
+	metrics []core.Metric,
+	config map[string]ctypes.ConfigValue,
+	deadline time.Duration) ([]core.Metric, error) {
 	arg := &rpc.PubProcArg{
 		Metrics: NewMetrics(metrics),
 		Config:  ToConfigMap(config),
 	}
-	reply, err := g.processor.Process(getContext(g.timeout), arg)
+	reply, err := g.processor.Process(getContext(deadline), arg)
 
 	if err != nil {
 		return nil, err

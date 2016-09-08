@@ -27,6 +27,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	log "github.com/Sirupsen/logrus"
 
@@ -89,8 +90,16 @@ type managesMetrics interface {
 	publishesMetrics
 	processesMetrics
 	GetAutodiscoverPaths() []string
-	ValidateDeps([]core.RequestedMetric, []core.SubscribedPlugin, *cdata.ConfigDataTree) []serror.SnapError
-	SubscribeDeps(string, []core.RequestedMetric, []core.SubscribedPlugin, *cdata.ConfigDataTree) []serror.SnapError
+	ValidateDeps(
+		[]core.RequestedMetric,
+		[]core.SubscribedPlugin,
+		*cdata.ConfigDataTree) []serror.SnapError
+	SubscribeDeps(
+		string,
+		[]core.RequestedMetric,
+		[]core.SubscribedPlugin,
+		*cdata.ConfigDataTree,
+		time.Duration) []serror.SnapError
 	UnsubscribeDeps(string) []serror.SnapError
 }
 
@@ -492,7 +501,12 @@ func (s *scheduler) startTask(id, source string) []serror.SnapError {
 		if err != nil {
 			errs = append(errs, serror.New(err))
 		} else {
-			errs = mgr.SubscribeDeps(t.ID(), depGroups[k].requestedMetrics, depGroups[k].subscribedPlugins, t.workflow.configTree)
+			errs = mgr.SubscribeDeps(
+				t.ID(),
+				depGroups[k].requestedMetrics,
+				depGroups[k].subscribedPlugins,
+				t.workflow.configTree,
+				t.DeadlineDuration())
 		}
 		// If there are errors with subscribing any deps, go through and unsubscribe all other
 		// deps that may have already been subscribed then return the errors.

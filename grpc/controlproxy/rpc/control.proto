@@ -67,6 +67,7 @@ message SubscribeDepsRequest {
 	repeated common.Metric Requested = 1;
 	repeated common.SubscribedPlugin Plugins = 2;
 	string TaskId = 3;
+	int64 Deadline = 4;
 }
 
 message SubscribeDepsReply {

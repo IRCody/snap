@@ -20,6 +20,8 @@ limitations under the License.
 package control
 
 import (
+	"time"
+
 	"github.com/intelsdi-x/snap/core"
 	"github.com/intelsdi-x/snap/core/cdata"
 	"github.com/intelsdi-x/snap/grpc/common"
@@ -93,7 +95,12 @@ func (pc *ControlGRPCServer) SubscribeDeps(ctx context.Context, r *rpc.Subscribe
 	plugins := common.ToSubPlugins(r.Plugins)
 	configTree := cdata.NewTree()
 	requested := common.MetricToRequested(r.Requested)
-	serrors := pc.control.SubscribeDeps(r.TaskId, requested, plugins, configTree)
+	serrors := pc.control.SubscribeDeps(
+		r.TaskId,
+		requested,
+		plugins,
+		configTree,
+		time.Duration(r.Deadline))
 	return &rpc.SubscribeDepsReply{Errors: common.NewErrors(serrors)}, nil
 }
 

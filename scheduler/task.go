@@ -39,8 +39,8 @@ import (
 )
 
 const (
-	// DefaultDeadlineDuration - The default timeout is 5 second
-	DefaultDeadlineDuration = time.Second * 5
+	// DefaultDeadlineDuration - The default timeout is 0 seconds
+	DefaultDeadlineDuration = time.Second * 0
 	// DefaultStopOnFailure is used to set the number of failures before a task is disabled
 	DefaultStopOnFailure = 10
 )

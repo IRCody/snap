@@ -152,8 +152,14 @@ func (c ControlProxy) ValidateDeps(mts []core.RequestedMetric, plugins []core.Su
 	return serrs
 }
 
-func (c ControlProxy) SubscribeDeps(taskID string, requested []core.RequestedMetric, plugins []core.SubscribedPlugin, configTree *cdata.ConfigDataTree) []serror.SnapError {
-	req := depsRequest(taskID, requested, plugins, configTree)
+func (c ControlProxy) SubscribeDeps(
+	taskID string,
+	requested []core.RequestedMetric,
+	plugins []core.SubscribedPlugin,
+	configTree *cdata.ConfigDataTree,
+	deadline time.Duration) []serror.SnapError {
+
+	req := depsRequest(taskID, requested, plugins, configTree, deadline)
 	reply, err := c.Client.SubscribeDeps(getContext(), req)
 	if err != nil {
 		return []serror.SnapError{serror.New(err)}
@@ -195,11 +201,17 @@ func getPluginType(t core.PluginType) int32 {
 	return val
 }
 
-func depsRequest(taskID string, requested []core.RequestedMetric, plugins []core.SubscribedPlugin, configTree *cdata.ConfigDataTree) *rpc.SubscribeDepsRequest {
+func depsRequest(
+	taskID string,
+	requested []core.RequestedMetric,
+	plugins []core.SubscribedPlugin,
+	configTree *cdata.ConfigDataTree,
+	deadline time.Duration) *rpc.SubscribeDepsRequest {
 	req := &rpc.SubscribeDepsRequest{
 		Requested: common.RequestedToMetric(requested),
 		Plugins:   common.ToSubPluginsMsg(plugins),
 		TaskId:    taskID,
+		Deadline:  int64(deadline),
 	}
 	return req
 }

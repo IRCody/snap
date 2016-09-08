@@ -39,20 +39,26 @@ type PluginClient interface {
 // PluginCollectorClient A client providing collector specific plugin method calls.
 type PluginCollectorClient interface {
 	PluginClient
-	CollectMetrics([]core.Metric,
-		time.Duration,
-	) ([]core.Metric, error)
+	CollectMetrics(
+		[]core.Metric,
+		time.Duration) ([]core.Metric, error)
 	GetMetricTypes(plugin.ConfigType) ([]core.Metric, error)
 }
 
 // PluginProcessorClient A client providing processor specific plugin method calls.
 type PluginProcessorClient interface {
 	PluginClient
-	Process([]core.Metric, map[string]ctypes.ConfigValue) ([]core.Metric, error)
+	Process(
+		[]core.Metric,
+		map[string]ctypes.ConfigValue,
+		time.Duration) ([]core.Metric, error)
 }
 
 // PluginPublisherClient A client providing publishing specific plugin method calls.
 type PluginPublisherClient interface {
 	PluginClient
-	Publish([]core.Metric, map[string]ctypes.ConfigValue) error
+	Publish(
+		[]core.Metric,
+		map[string]ctypes.ConfigValue,
+		time.Duration) error
 }

@@ -242,11 +242,17 @@ func (h *httpJSONRPCClient) GetConfigPolicy() (*cpolicy.ConfigPolicy, error) {
 	return cpr.Policy, nil
 }
 
-func (h *httpJSONRPCClient) Publish([]core.Metric, map[string]ctypes.ConfigValue) error {
+func (h *httpJSONRPCClient) Publish(
+	[]core.Metric,
+	map[string]ctypes.ConfigValue,
+	time.Duration) error {
 	return errors.New("Not Implemented")
 }
 
-func (h *httpJSONRPCClient) Process([]core.Metric, map[string]ctypes.ConfigValue) ([]core.Metric, error) {
+func (h *httpJSONRPCClient) Process(
+	[]core.Metric,
+	map[string]ctypes.ConfigValue,
+	time.Duration) ([]core.Metric, error) {
 	return nil, errors.New("Not Implemented")
 }
 

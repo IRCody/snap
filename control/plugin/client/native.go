@@ -52,6 +52,7 @@ type PluginNativeClient struct {
 	pluginType plugin.PluginType
 	encoder    encoding.Encoder
 	encrypter  *encrypter.Encrypter
+	timeout    time.Duration
 }
 
 func NewCollectorNativeClient(address string, timeout time.Duration, pub *rsa.PublicKey, secure bool) (PluginCollectorClient, error) {
@@ -140,7 +141,10 @@ func decodeMetrics(bts []byte) ([]core.Metric, error) {
 	return cmetrics, nil
 }
 
-func (p *PluginNativeClient) Publish(metrics []core.Metric, config map[string]ctypes.ConfigValue) error {
+func (p *PluginNativeClient) Publish(
+	metrics []core.Metric,
+	config map[string]ctypes.ConfigValue,
+	deadline time.Duration) error {
 
 	args := plugin.PublishArgs{
 		ContentType: plugin.SnapGOBContentType,
@@ -154,12 +158,21 @@ func (p *PluginNativeClient) Publish(metrics []core.Metric, config map[string]ct
 	}
 
 	var reply []byte
+	done := make(chan struct{})
+	if deadline == time.Duration(0) {
+		go enforceDeadline(p, p.timeout, done)
+	} else {
+		go enforceDeadline(p, deadline, done)
+	}
 	err = p.connection.Call("Publisher.Publish", out, &reply)
+	close(done)
 	return err
-	return nil
 }
 
-func (p *PluginNativeClient) Process(metrics []core.Metric, config map[string]ctypes.ConfigValue) ([]core.Metric, error) {
+func (p *PluginNativeClient) Process(
+	metrics []core.Metric,
+	config map[string]ctypes.ConfigValue,
+	deadline time.Duration) ([]core.Metric, error) {
 
 	args := plugin.ProcessorArgs{
 		ContentType: plugin.SnapGOBContentType,
@@ -173,7 +186,14 @@ func (p *PluginNativeClient) Process(metrics []core.Metric, config map[string]ct
 	}
 
 	var reply []byte
+	done := make(chan struct{})
+	if deadline == time.Duration(0) {
+		go enforceDeadline(p, p.timeout, done)
+	} else {
+		go enforceDeadline(p, deadline, done)
+	}
 	err = p.connection.Call("Processor.Process", out, &reply)
+	close(done)
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +219,8 @@ func enforceDeadline(p *PluginNativeClient, dl time.Duration, done chan struct{}
 	}
 }
 
-func (p *PluginNativeClient) CollectMetrics(mts []core.Metric,
+func (p *PluginNativeClient) CollectMetrics(
+	mts []core.Metric,
 	deadline time.Duration) ([]core.Metric, error) {
 	// Convert core.MetricType slice into plugin.nMetricType slice as we have
 	// to send structs over RPC
@@ -228,7 +249,11 @@ func (p *PluginNativeClient) CollectMetrics(mts []core.Metric,
 
 	var reply []byte
 	done := make(chan struct{})
-	go enforceDeadline(p, deadline, done)
+	if deadline == time.Duration(0) {
+		go enforceDeadline(p, p.timeout, done)
+	} else {
+		go enforceDeadline(p, deadline, done)
+	}
 	err = p.connection.Call("Collector.CollectMetrics", out, &reply)
 	close(done)
 	if err != nil {
@@ -315,6 +340,7 @@ func newNativeClient(address string, timeout time.Duration, t plugin.PluginType,
 	p := &PluginNativeClient{
 		connection: r,
 		pluginType: t,
+		timeout:    timeout,
 	}
 
 	p.encoder = encoding.NewGobEncoder()

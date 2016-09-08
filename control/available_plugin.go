@@ -446,7 +446,13 @@ func (ap *availablePlugins) collectMetrics(pluginKey string,
 	return results, nil
 }
 
-func (ap *availablePlugins) publishMetrics(metrics []core.Metric, pluginName string, pluginVersion int, config map[string]ctypes.ConfigValue, taskID string) []error {
+func (ap *availablePlugins) publishMetrics(
+	metrics []core.Metric,
+	pluginName string,
+	pluginVersion int,
+	config map[string]ctypes.ConfigValue,
+	taskID string,
+	deadline time.Duration) []error {
 	var errs []error
 	key := strings.Join([]string{plugin.PublisherPluginType.String(), pluginName, strconv.Itoa(pluginVersion)}, ":")
 	pool, serr := ap.getPool(key)
@@ -472,7 +478,7 @@ func (ap *availablePlugins) publishMetrics(metrics []core.Metric, pluginName str
 		return []error{errors.New("unable to cast client to PluginPublisherClient")}
 	}
 
-	errp := cli.Publish(metrics, config)
+	errp := cli.Publish(metrics, config, deadline)
 	if errp != nil {
 		return []error{errp}
 	}
@@ -481,7 +487,13 @@ func (ap *availablePlugins) publishMetrics(metrics []core.Metric, pluginName str
 	return nil
 }
 
-func (ap *availablePlugins) processMetrics(metrics []core.Metric, pluginName string, pluginVersion int, config map[string]ctypes.ConfigValue, taskID string) ([]core.Metric, []error) {
+func (ap *availablePlugins) processMetrics(
+	metrics []core.Metric,
+	pluginName string,
+	pluginVersion int,
+	config map[string]ctypes.ConfigValue,
+	taskID string,
+	deadline time.Duration) ([]core.Metric, []error) {
 	var errs []error
 	key := strings.Join([]string{plugin.ProcessorPluginType.String(), pluginName, strconv.Itoa(pluginVersion)}, ":")
 	pool, serr := ap.getPool(key)
@@ -506,7 +518,7 @@ func (ap *availablePlugins) processMetrics(metrics []core.Metric, pluginName str
 		return nil, []error{errors.New("unable to cast client to PluginProcessorClient")}
 	}
 
-	mts, errp := cli.Process(metrics, config)
+	mts, errp := cli.Process(metrics, config, deadline)
 	if errp != nil {
 		return nil, []error{errp}
 	}
