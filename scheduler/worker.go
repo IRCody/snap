@@ -19,12 +19,7 @@ limitations under the License.
 
 package scheduler
 
-import (
-	"errors"
-
-	"github.com/intelsdi-x/snap/pkg/chrono"
-	"github.com/pborman/uuid"
-)
+import "github.com/pborman/uuid"
 
 var workerKillChan = make(chan struct{})
 
@@ -48,12 +43,12 @@ func (w *worker) start() {
 		select {
 		case q := <-w.rcv:
 			// assert that deadline is not exceeded
-			if chrono.Chrono.Now().Before(q.Job().Deadline()) {
-				q.Job().Run()
-			} else {
-				// the deadline was exceeded and this job will not run
-				q.Job().AddErrors(errors.New("Worker refused to run overdue job."))
-			}
+			//			if chrono.Chrono.Now().Before(q.Job().Deadline()) {
+			q.Job().Run()
+			//			} else {
+			//			// the deadline was exceeded and this job will not run
+			//			q.Job().AddErrors(errors.New("Worker refused to run overdue job."))
+			//		}
 
 			// mark the job complete
 			q.Promise().Complete(q.Job().Errors())

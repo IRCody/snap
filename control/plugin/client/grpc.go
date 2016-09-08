@@ -196,7 +196,13 @@ func (g *grpcClient) Publish(
 		Metrics: NewMetrics(metrics),
 		Config:  ToConfigMap(config),
 	}
-	_, err := g.publisher.Publish(getContext(deadline), arg)
+	var ctx context.Context
+	if deadline == time.Duration(0) {
+		ctx = getContext(g.timeout)
+	} else {
+		ctx = getContext(deadline)
+	}
+	_, err := g.publisher.Publish(ctx, arg)
 	if err != nil {
 		return err
 	}
@@ -207,11 +213,18 @@ func (g *grpcClient) Process(
 	metrics []core.Metric,
 	config map[string]ctypes.ConfigValue,
 	deadline time.Duration) ([]core.Metric, error) {
+
 	arg := &rpc.PubProcArg{
 		Metrics: NewMetrics(metrics),
 		Config:  ToConfigMap(config),
 	}
-	reply, err := g.processor.Process(getContext(deadline), arg)
+	var ctx context.Context
+	if deadline == time.Duration(0) {
+		ctx = getContext(g.timeout)
+	} else {
+		ctx = getContext(deadline)
+	}
+	reply, err := g.processor.Process(ctx, arg)
 
 	if err != nil {
 		return nil, err
@@ -231,7 +244,13 @@ func (g *grpcClient) CollectMetrics(mts []core.Metric,
 	arg := &rpc.MetricsArg{
 		Metrics: NewMetrics(mts),
 	}
-	reply, err := g.collector.CollectMetrics(getContext(deadline), arg)
+	var ctx context.Context
+	if deadline == time.Duration(0) {
+		ctx = getContext(g.timeout)
+	} else {
+		ctx = getContext(deadline)
+	}
+	reply, err := g.collector.CollectMetrics(ctx, arg)
 
 	if err != nil {
 		return nil, err
