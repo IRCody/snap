@@ -66,7 +66,6 @@ type executablePlugin interface {
 type runner struct {
 	delegates        []gomit.Delegator
 	emitter          gomit.Emitter
-	monitor          *monitor
 	availablePlugins *availablePlugins
 	metricCatalog    catalogsMetrics
 	pluginManager    managesPlugins
@@ -74,7 +73,6 @@ type runner struct {
 
 func newRunner() *runner {
 	r := &runner{
-		monitor:          newMonitor(),
 		availablePlugins: newAvailablePlugins(),
 	}
 	return r
@@ -94,10 +92,6 @@ func (r *runner) SetPluginManager(m managesPlugins) {
 
 func (r *runner) AvailablePlugins() *availablePlugins {
 	return r.availablePlugins
-}
-
-func (r *runner) Monitor() *monitor {
-	return r.monitor
 }
 
 // Adds Delegates (gomit.Delegator) for adding Runner handlers to on Start and
@@ -123,8 +117,6 @@ func (r *runner) Start() error {
 		}
 	}
 
-	// Start the monitor
-	r.monitor.Start(r.availablePlugins)
 	runnerLog.WithFields(log.Fields{
 		"_block": "start",
 	}).Debug("started")
@@ -134,9 +126,6 @@ func (r *runner) Start() error {
 // Stop handling, gracefully stop all plugins.
 func (r *runner) Stop() []error {
 	var errs []error
-
-	// Stop the monitor
-	r.monitor.Stop()
 
 	// TODO: Actually stop the plugins
 
@@ -175,6 +164,7 @@ func (r *runner) startPlugin(p executablePlugin) (*availablePlugin, error) {
 
 	// build availablePlugin
 	ap, err := newAvailablePlugin(resp, r.emitter, p)
+	go ap.CheckHealth(ap)
 	if err != nil {
 		return nil, err
 	}

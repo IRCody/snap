@@ -114,7 +114,6 @@ type runsPlugins interface {
 	SetEmitter(gomit.Emitter)
 	SetMetricCatalog(catalogsMetrics)
 	SetPluginManager(managesPlugins)
-	Monitor() *monitor
 	runPlugin(*pluginDetails) error
 }
 
@@ -764,11 +763,6 @@ func (p *pluginControl) getMetricsAndCollectors(requested []core.RequestedMetric
 	}
 
 	return newMetricsGroupedByPlugin, newPlugins, serrs
-}
-
-// SetMonitorOptions exposes monitors options
-func (p *pluginControl) SetMonitorOptions(options ...monitorOption) {
-	p.pluginRunner.Monitor().Option(options...)
 }
 
 // returns the loaded plugin collection

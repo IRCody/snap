@@ -74,7 +74,6 @@ type Pool interface {
 type AvailablePlugin interface {
 	core.AvailablePlugin
 	CacheTTL() time.Duration
-	CheckHealth()
 	ConcurrencyCount() int
 	Exclusive() bool
 	Kill(r string) error

@@ -142,10 +142,6 @@ func TestPluginControlGenerateArgs(t *testing.T) {
 		So(err, ShouldBeNil)
 		So(c.Name(), ShouldResemble, "control")
 	})
-	c.SetMonitorOptions(MonitorDurationOption(time.Millisecond * 100))
-	Convey("sets monitor duration", t, func() {
-		So(c.pluginRunner.Monitor().duration, ShouldResemble, 100*time.Millisecond)
-	})
 	c.Stop()
 }
 
@@ -1201,7 +1197,6 @@ func TestCollectMetrics(t *testing.T) {
 		config := getTestConfig()
 		config.Plugins.All.AddItem("password", ctypes.ConfigValueStr{Value: "testval"})
 		c := New(config)
-		c.pluginRunner.(*runner).monitor.duration = time.Millisecond * 100
 		c.Start()
 		lpe := newListenToPluginEvent()
 		c.eventManager.RegisterHandler("Control.PluginLoaded", lpe)
@@ -1295,7 +1290,6 @@ func TestCollectNonSpecifiedDynamicMetrics(t *testing.T) {
 		config := getTestConfig()
 		config.Plugins.All.AddItem("password", ctypes.ConfigValueStr{Value: "testval"})
 		c := New(config)
-		c.pluginRunner.(*runner).monitor.duration = time.Millisecond * 100
 		c.Start()
 		lpe := newListenToPluginEvent()
 		c.eventManager.RegisterHandler("Control.PluginLoaded", lpe)
@@ -1383,7 +1377,6 @@ func TestCollectSpecifiedDynamicMetrics(t *testing.T) {
 		config := getTestConfig()
 		config.Plugins.All.AddItem("password", ctypes.ConfigValueStr{Value: "testval"})
 		c := New(config)
-		c.pluginRunner.(*runner).monitor.duration = time.Millisecond * 100
 		c.Start()
 
 		// Load plugin
@@ -1459,7 +1452,6 @@ func TestPublishMetrics(t *testing.T) {
 		c := New(getTestConfig())
 		lpe := newListenToPluginEvent()
 		c.eventManager.RegisterHandler("TestPublishMetrics", lpe)
-		c.pluginRunner.(*runner).monitor.duration = time.Millisecond * 100
 		c.Start()
 		time.Sleep(1 * time.Second)
 
@@ -1506,7 +1498,6 @@ func TestProcessMetrics(t *testing.T) {
 		c := New(getTestConfig())
 		lpe := newListenToPluginEvent()
 		c.eventManager.RegisterHandler("TestProcessMetrics", lpe)
-		c.pluginRunner.(*runner).monitor.duration = time.Millisecond * 100
 		c.Start()
 		time.Sleep(1 * time.Second)
 		c.Config.Plugins.Processor.Plugins["passthru"] = newPluginConfigItem(optAddPluginConfigItem("test", ctypes.ConfigValueBool{Value: true}))

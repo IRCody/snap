@@ -462,7 +462,6 @@ func TestRunnerPluginRunning(t *testing.T) {
 						ap.CheckHealth()
 						So(ap.failedHealthChecks, ShouldEqual, 3)
 					})
-
 					Convey("should return error for Run error", func() {
 						r := newRunner()
 						r.SetEmitter(new(MockEmitter))

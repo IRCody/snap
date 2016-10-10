@@ -75,6 +75,8 @@ type availablePlugin struct {
 	exec               string
 	execPath           string
 	fromPackage        bool
+	healthChecker
+	running bool
 }
 
 // newAvailablePlugin returns an availablePlugin with information from a
@@ -84,14 +86,15 @@ func newAvailablePlugin(resp plugin.Response, emitter gomit.Emitter, ep executab
 		return nil, strategy.ErrBadType
 	}
 	ap := &availablePlugin{
-		meta:        resp.Meta,
-		name:        resp.Meta.Name,
-		version:     resp.Meta.Version,
-		pluginType:  resp.Type,
-		emitter:     emitter,
-		healthChan:  make(chan error, 1),
-		lastHitTime: time.Now(),
-		ePlugin:     ep,
+		meta:          resp.Meta,
+		name:          resp.Meta.Name,
+		version:       resp.Meta.Version,
+		pluginType:    resp.Type,
+		emitter:       emitter,
+		healthChan:    make(chan error, 1),
+		lastHitTime:   time.Now(),
+		ePlugin:       ep,
+		healthChecker: simple{},
 	}
 	ap.key = fmt.Sprintf("%s"+core.Separator+"%s"+core.Separator+"%d", ap.pluginType.String(), ap.name, ap.version)
 
@@ -221,6 +224,7 @@ func (a *availablePlugin) Stop(r string) error {
 		"block":   "stop",
 		"aplugin": a,
 	}).Info("stopping available plugin")
+	a.running = false
 	return a.client.Kill(r)
 }
 
@@ -240,17 +244,26 @@ func (a *availablePlugin) Kill(r string) error {
 		}).Debug("deleting available plugin path")
 		os.RemoveAll(filepath.Dir(a.execPath))
 	}
+	a.running = false
 	return a.ePlugin.Kill()
 }
 
+type healthChecker interface {
+	CheckHealth(*availablePlugin)
+}
+
+type simple struct{}
+
 // CheckHealth checks the health of a plugin and updates
 // a.failedHealthChecks
-func (a *availablePlugin) CheckHealth() {
-	go func() {
-		a.healthChan <- a.client.Ping()
-	}()
-	select {
-	case err := <-a.healthChan:
+func (simple) CheckHealth(a *availablePlugin) {
+	ticker := time.NewTicker(time.Second * 1)
+	a.running = true
+	for range ticker.C {
+		if !a.running {
+			break
+		}
+		err := a.client.Ping()
 		if err == nil {
 			if a.failedHealthChecks > 0 {
 				// only log on first ok health check
@@ -264,8 +277,6 @@ func (a *availablePlugin) CheckHealth() {
 		} else {
 			a.healthCheckFailed()
 		}
-	case <-time.After(DefaultHealthCheckTimeout):
-		a.healthCheckFailed()
 	}
 }
 
