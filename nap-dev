@@ -1,0 +1,471 @@
+[1mdiff --git a/control/available_plugin.go b/control/available_plugin.go[m
+[1mindex 08935ce..29cbb18 100644[m
+[1m--- a/control/available_plugin.go[m
+[1m+++ b/control/available_plugin.go[m
+[36m@@ -75,6 +75,8 @@[m [mtype availablePlugin struct {[m
+ 	exec               string[m
+ 	execPath           string[m
+ 	fromPackage        bool[m
+[32m+[m	[32mhealthChecker[m
+[32m+[m	[32mrunning bool[m
+ }[m
+ [m
+ // newAvailablePlugin returns an availablePlugin with information from a[m
+[36m@@ -84,14 +86,15 @@[m [mfunc newAvailablePlugin(resp plugin.Response, emitter gomit.Emitter, ep executab[m
+ 		return nil, strategy.ErrBadType[m
+ 	}[m
+ 	ap := &availablePlugin{[m
+[31m-		meta:        resp.Meta,[m
+[31m-		name:        resp.Meta.Name,[m
+[31m-		version:     resp.Meta.Version,[m
+[31m-		pluginType:  resp.Type,[m
+[31m-		emitter:     emitter,[m
+[31m-		healthChan:  make(chan error, 1),[m
+[31m-		lastHitTime: time.Now(),[m
+[31m-		ePlugin:     ep,[m
+[32m+[m		[32mmeta:          resp.Meta,[m
+[32m+[m		[32mname:          resp.Meta.Name,[m
+[32m+[m		[32mversion:       resp.Meta.Version,[m
+[32m+[m		[32mpluginType:    resp.Type,[m
+[32m+[m		[32memitter:       emitter,[m
+[32m+[m		[32mhealthChan:    make(chan error, 1),[m
+[32m+[m		[32mlastHitTime:   time.Now(),[m
+[32m+[m		[32mePlugin:       ep,[m
+[32m+[m		[32mhealthChecker: simple{},[m
+ 	}[m
+ 	ap.key = fmt.Sprintf("%s"+core.Separator+"%s"+core.Separator+"%d", ap.pluginType.String(), ap.name, ap.version)[m
+ [m
+[36m@@ -221,6 +224,7 @@[m [mfunc (a *availablePlugin) Stop(r string) error {[m
+ 		"block":   "stop",[m
+ 		"aplugin": a,[m
+ 	}).Info("stopping available plugin")[m
+[32m+[m	[32ma.running = false[m
+ 	return a.client.Kill(r)[m
+ }[m
+ [m
+[36m@@ -240,17 +244,26 @@[m [mfunc (a *availablePlugin) Kill(r string) error {[m
+ 		}).Debug("deleting available plugin path")[m
+ 		os.RemoveAll(filepath.Dir(a.execPath))[m
+ 	}[m
+[32m+[m	[32ma.running = false[m
+ 	return a.ePlugin.Kill()[m
+ }[m
+ [m
+[32m+[m[32mtype healthChecker interface {[m
+[32m+[m	[32mCheckHealth(*availablePlugin)[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mtype simple struct{}[m
+[32m+[m
+ // CheckHealth checks the health of a plugin and updates[m
+ // a.failedHealthChecks[m
+[31m-func (a *availablePlugin) CheckHealth() {[m
+[31m-	go func() {[m
+[31m-		a.healthChan <- a.client.Ping()[m
+[31m-	}()[m
+[31m-	select {[m
+[31m-	case err := <-a.healthChan:[m
+[32m+[m[32mfunc (simple) CheckHealth(a *availablePlugin) {[m
+[32m+[m	[32mticker := time.NewTicker(time.Second * 1)[m
+[32m+[m	[32ma.running = true[m
+[32m+[m	[32mfor range ticker.C {[m
+[32m+[m		[32mif !a.running {[m
+[32m+[m			[32mbreak[m
+[32m+[m		[32m}[m
+[32m+[m		[32merr := a.client.Ping()[m
+ 		if err == nil {[m
+ 			if a.failedHealthChecks > 0 {[m
+ 				// only log on first ok health check[m
+[36m@@ -264,8 +277,6 @@[m [mfunc (a *availablePlugin) CheckHealth() {[m
+ 		} else {[m
+ 			a.healthCheckFailed()[m
+ 		}[m
+[31m-	case <-time.After(DefaultHealthCheckTimeout):[m
+[31m-		a.healthCheckFailed()[m
+ 	}[m
+ }[m
+ [m
+[1mdiff --git a/control/control.go b/control/control.go[m
+[1mindex 1af7a83..730b541 100644[m
+[1m--- a/control/control.go[m
+[1m+++ b/control/control.go[m
+[36m@@ -114,7 +114,6 @@[m [mtype runsPlugins interface {[m
+ 	SetEmitter(gomit.Emitter)[m
+ 	SetMetricCatalog(catalogsMetrics)[m
+ 	SetPluginManager(managesPlugins)[m
+[31m-	Monitor() *monitor[m
+ 	runPlugin(*pluginDetails) error[m
+ }[m
+ [m
+[36m@@ -766,11 +765,6 @@[m [mfunc (p *pluginControl) getMetricsAndCollectors(requested []core.RequestedMetric[m
+ 	return newMetricsGroupedByPlugin, newPlugins, serrs[m
+ }[m
+ [m
+[31m-// SetMonitorOptions exposes monitors options[m
+[31m-func (p *pluginControl) SetMonitorOptions(options ...monitorOption) {[m
+[31m-	p.pluginRunner.Monitor().Option(options...)[m
+[31m-}[m
+[31m-[m
+ // returns the loaded plugin collection[m
+ // NOTE: The returned data from this function should be considered constant and read only[m
+ func (p *pluginControl) PluginCatalog() core.PluginCatalog {[m
+[1mdiff --git a/control/control_test.go b/control/control_test.go[m
+[1mindex d2a7fc4..c6fb858 100644[m
+[1m--- a/control/control_test.go[m
+[1m+++ b/control/control_test.go[m
+[36m@@ -142,10 +142,6 @@[m [mfunc TestPluginControlGenerateArgs(t *testing.T) {[m
+ 		So(err, ShouldBeNil)[m
+ 		So(c.Name(), ShouldResemble, "control")[m
+ 	})[m
+[31m-	c.SetMonitorOptions(MonitorDurationOption(time.Millisecond * 100))[m
+[31m-	Convey("sets monitor duration", t, func() {[m
+[31m-		So(c.pluginRunner.Monitor().duration, ShouldResemble, 100*time.Millisecond)[m
+[31m-	})[m
+ 	c.Stop()[m
+ }[m
+ [m
+[36m@@ -1201,7 +1197,6 @@[m [mfunc TestCollectMetrics(t *testing.T) {[m
+ 		config := getTestConfig()[m
+ 		config.Plugins.All.AddItem("password", ctypes.ConfigValueStr{Value: "testval"})[m
+ 		c := New(config)[m
+[31m-		c.pluginRunner.(*runner).monitor.duration = time.Millisecond * 100[m
+ 		c.Start()[m
+ 		lpe := newListenToPluginEvent()[m
+ 		c.eventManager.RegisterHandler("Control.PluginLoaded", lpe)[m
+[36m@@ -1295,7 +1290,6 @@[m [mfunc TestCollectNonSpecifiedDynamicMetrics(t *testing.T) {[m
+ 		config := getTestConfig()[m
+ 		config.Plugins.All.AddItem("password", ctypes.ConfigValueStr{Value: "testval"})[m
+ 		c := New(config)[m
+[31m-		c.pluginRunner.(*runner).monitor.duration = time.Millisecond * 100[m
+ 		c.Start()[m
+ 		lpe := newListenToPluginEvent()[m
+ 		c.eventManager.RegisterHandler("Control.PluginLoaded", lpe)[m
+[36m@@ -1383,7 +1377,6 @@[m [mfunc TestCollectSpecifiedDynamicMetrics(t *testing.T) {[m
+ 		config := getTestConfig()[m
+ 		config.Plugins.All.AddItem("password", ctypes.ConfigValueStr{Value: "testval"})[m
+ 		c := New(config)[m
+[31m-		c.pluginRunner.(*runner).monitor.duration = time.Millisecond * 100[m
+ 		c.Start()[m
+ [m
+ 		// Load plugin[m
+[36m@@ -1459,7 +1452,6 @@[m [mfunc TestPublishMetrics(t *testing.T) {[m
+ 		c := New(getTestConfig())[m
+ 		lpe := newListenToPluginEvent()[m
+ 		c.eventManager.RegisterHandler("TestPublishMetrics", lpe)[m
+[31m-		c.pluginRunner.(*runner).monitor.duration = time.Millisecond * 100[m
+ 		c.Start()[m
+ 		time.Sleep(1 * time.Second)[m
+ [m
+[36m@@ -1506,7 +1498,6 @@[m [mfunc TestProcessMetrics(t *testing.T) {[m
+ 		c := New(getTestConfig())[m
+ 		lpe := newListenToPluginEvent()[m
+ 		c.eventManager.RegisterHandler("TestProcessMetrics", lpe)[m
+[31m-		c.pluginRunner.(*runner).monitor.duration = time.Millisecond * 100[m
+ 		c.Start()[m
+ 		time.Sleep(1 * time.Second)[m
+ 		c.Config.Plugins.Processor.Plugins["passthru"] = newPluginConfigItem(optAddPluginConfigItem("test", ctypes.ConfigValueBool{Value: true}))[m
+[1mdiff --git a/control/monitor.go b/control/monitor.go[m
+[1mdeleted file mode 100644[m
+[1mindex f075661..0000000[m
+[1m--- a/control/monitor.go[m
+[1m+++ /dev/null[m
+[36m@@ -1,107 +0,0 @@[m
+[31m-/*[m
+[31m-http://www.apache.org/licenses/LICENSE-2.0.txt[m
+[31m-[m
+[31m-[m
+[31m-Copyright 2015 Intel Corporation[m
+[31m-[m
+[31m-Licensed under the Apache License, Version 2.0 (the "License");[m
+[31m-you may not use this file except in compliance with the License.[m
+[31m-You may obtain a copy of the License at[m
+[31m-[m
+[31m-    http://www.apache.org/licenses/LICENSE-2.0[m
+[31m-[m
+[31m-Unless required by applicable law or agreed to in writing, software[m
+[31m-distributed under the License is distributed on an "AS IS" BASIS,[m
+[31m-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.[m
+[31m-See the License for the specific language governing permissions and[m
+[31m-limitations under the License.[m
+[31m-*/[m
+[31m-[m
+[31m-package control[m
+[31m-[m
+[31m-import "time"[m
+[31m-[m
+[31m-const ([m
+[31m-	// MonitorStopped - enum representation of monitor stopped state[m
+[31m-	MonitorStopped monitorState = iota - 1 // default is stopped[m
+[31m-	// MonitorStarted - enum representation of monitor started state[m
+[31m-	MonitorStarted[m
+[31m-[m
+[31m-	// DefaultMonitorDuration - the default monitor duration.[m
+[31m-	DefaultMonitorDuration = time.Second * 1[m
+[31m-)[m
+[31m-[m
+[31m-type monitorState int[m
+[31m-[m
+[31m-type monitor struct {[m
+[31m-	State monitorState[m
+[31m-[m
+[31m-	duration time.Duration[m
+[31m-	quit     chan struct{}[m
+[31m-}[m
+[31m-[m
+[31m-type monitorOption func(m *monitor) monitorOption[m
+[31m-[m
+[31m-// Option sets the options specified.[m
+[31m-// Returns an option to optionally restore the last arg's previous value.[m
+[31m-func (m *monitor) Option(opts ...monitorOption) monitorOption {[m
+[31m-	var previous monitorOption[m
+[31m-	for _, opt := range opts {[m
+[31m-		previous = opt(m)[m
+[31m-	}[m
+[31m-	return previous[m
+[31m-}[m
+[31m-[m
+[31m-// MonitorDurationOption sets monitor's duration to v.[m
+[31m-func MonitorDurationOption(v time.Duration) monitorOption {[m
+[31m-	return func(m *monitor) monitorOption {[m
+[31m-		previous := m.duration[m
+[31m-		m.duration = v[m
+[31m-		return MonitorDurationOption(previous)[m
+[31m-	}[m
+[31m-}[m
+[31m-[m
+[31m-func newMonitor(opts ...monitorOption) *monitor {[m
+[31m-	mon := &monitor{[m
+[31m-		State:    MonitorStopped,[m
+[31m-		duration: DefaultMonitorDuration,[m
+[31m-	}[m
+[31m-	//set options[m
+[31m-	for _, opt := range opts {[m
+[31m-		opt(mon)[m
+[31m-	}[m
+[31m-	return mon[m
+[31m-}[m
+[31m-[m
+[31m-// Start starts the monitor[m
+[31m-func (m *monitor) Start(availablePlugins *availablePlugins) {[m
+[31m-	//start a routine that will be fired every X duration looping[m
+[31m-	//over available plugins and firing a health check routine[m
+[31m-	ticker := time.NewTicker(m.duration)[m
+[31m-	m.quit = make(chan struct{})[m
+[31m-	go func() {[m
+[31m-		for {[m
+[31m-			select {[m
+[31m-			case <-ticker.C:[m
+[31m-				go func() {[m
+[31m-					availablePlugins.RLock()[m
+[31m-					for _, ap := range availablePlugins.all() {[m
+[31m-						go ap.CheckHealth()[m
+[31m-					}[m
+[31m-					availablePlugins.RUnlock()[m
+[31m-				}()[m
+[31m-			case <-m.quit:[m
+[31m-				ticker.Stop()[m
+[31m-				m.State = MonitorStopped[m
+[31m-				return[m
+[31m-			}[m
+[31m-		}[m
+[31m-	}()[m
+[31m-	m.State = MonitorStarted[m
+[31m-}[m
+[31m-[m
+[31m-// Stop stops the monitor[m
+[31m-func (m *monitor) Stop() {[m
+[31m-	close(m.quit)[m
+[31m-	m.State = MonitorStopped[m
+[31m-}[m
+[1mdiff --git a/control/monitor_test.go b/control/monitor_test.go[m
+[1mdeleted file mode 100644[m
+[1mindex 7fe5753..0000000[m
+[1m--- a/control/monitor_test.go[m
+[1m+++ /dev/null[m
+[36m@@ -1,104 +0,0 @@[m
+[31m-// +build legacy[m
+[31m-[m
+[31m-/*[m
+[31m-http://www.apache.org/licenses/LICENSE-2.0.txt[m
+[31m-[m
+[31m-[m
+[31m-Copyright 2015 Intel Corporation[m
+[31m-[m
+[31m-Licensed under the Apache License, Version 2.0 (the "License");[m
+[31m-you may not use this file except in compliance with the License.[m
+[31m-You may obtain a copy of the License at[m
+[31m-[m
+[31m-    http://www.apache.org/licenses/LICENSE-2.0[m
+[31m-[m
+[31m-Unless required by applicable law or agreed to in writing, software[m
+[31m-distributed under the License is distributed on an "AS IS" BASIS,[m
+[31m-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.[m
+[31m-See the License for the specific language governing permissions and[m
+[31m-limitations under the License.[m
+[31m-*/[m
+[31m-[m
+[31m-package control[m
+[31m-[m
+[31m-import ([m
+[31m-	"testing"[m
+[31m-	"time"[m
+[31m-[m
+[31m-	"github.com/intelsdi-x/gomit"[m
+[31m-[m
+[31m-	"github.com/intelsdi-x/snap/control/plugin"[m
+[31m-[m
+[31m-	. "github.com/smartystreets/goconvey/convey"[m
+[31m-)[m
+[31m-[m
+[31m-func TestMonitor(t *testing.T) {[m
+[31m-	Convey("monitor", t, func() {[m
+[31m-		aps := newAvailablePlugins()[m
+[31m-[m
+[31m-		ap1 := &availablePlugin{[m
+[31m-			pluginType: plugin.CollectorPluginType,[m
+[31m-			version:    1,[m
+[31m-			name:       "test",[m
+[31m-			client:     new(MockUnhealthyPluginCollectorClient),[m
+[31m-			healthChan: make(chan error, 1),[m
+[31m-			emitter:    gomit.NewEventController(),[m
+[31m-		}[m
+[31m-		aps.insert(ap1)[m
+[31m-[m
+[31m-		ap2 := &availablePlugin{[m
+[31m-			pluginType: plugin.PublisherPluginType,[m
+[31m-			version:    1,[m
+[31m-			name:       "test",[m
+[31m-			client:     new(MockUnhealthyPluginCollectorClient),[m
+[31m-			healthChan: make(chan error, 1),[m
+[31m-			emitter:    gomit.NewEventController(),[m
+[31m-		}[m
+[31m-		aps.insert(ap2)[m
+[31m-[m
+[31m-		ap3 := &availablePlugin{[m
+[31m-			pluginType: plugin.ProcessorPluginType,[m
+[31m-			version:    1,[m
+[31m-			name:       "test",[m
+[31m-			client:     new(MockUnhealthyPluginCollectorClient),[m
+[31m-			healthChan: make(chan error, 1),[m
+[31m-			emitter:    gomit.NewEventController(),[m
+[31m-		}[m
+[31m-		aps.insert(ap3)[m
+[31m-[m
+[31m-		Convey("newMonitor", func() {[m
+[31m-			m := newMonitor(MonitorDurationOption(time.Millisecond * 123))[m
+[31m-			So(m, ShouldHaveSameTypeAs, &monitor{})[m
+[31m-			So(m.duration, ShouldResemble, time.Millisecond*123)[m
+[31m-		})[m
+[31m-		Convey("start", func() {[m
+[31m-			m := newMonitor()[m
+[31m-			m.Option(MonitorDurationOption(time.Millisecond * 200))[m
+[31m-			So(m.duration, ShouldResemble, time.Millisecond*200)[m
+[31m-			m.Start(aps)[m
+[31m-[m
+[31m-			So(m.State, ShouldEqual, MonitorStarted)[m
+[31m-			time.Sleep(1 * time.Second)[m
+[31m-			Convey("health monitor", func() {[m
+[31m-				for _, ap := range aps.all() {[m
+[31m-					So(ap, ShouldNotBeNil)[m
+[31m-					So(ap.(*availablePlugin).failedHealthChecks, ShouldBeGreaterThan, 3)[m
+[31m-				}[m
+[31m-			})[m
+[31m-		})[m
+[31m-		Convey("stop", func() {[m
+[31m-			m := newMonitor()[m
+[31m-			m.Start(aps)[m
+[31m-			So(m.State, ShouldEqual, MonitorStarted)[m
+[31m-			m.Stop()[m
+[31m-			So(m.State, ShouldEqual, MonitorStopped)[m
+[31m-		})[m
+[31m-		Convey("override MonitorDuration", func() {[m
+[31m-			m := newMonitor()[m
+[31m-			oldOpt := m.Option(MonitorDurationOption(time.Millisecond * 200))[m
+[31m-			So(m.duration, ShouldResemble, time.Millisecond*200)[m
+[31m-			m.Option(oldOpt)[m
+[31m-			So(m.duration, ShouldResemble, time.Second*1)[m
+[31m-		})[m
+[31m-	})[m
+[31m-}[m
+[1mdiff --git a/control/runner.go b/control/runner.go[m
+[1mindex db39208..3ab1e08 100644[m
+[1m--- a/control/runner.go[m
+[1m+++ b/control/runner.go[m
+[36m@@ -66,7 +66,6 @@[m [mtype executablePlugin interface {[m
+ type runner struct {[m
+ 	delegates        []gomit.Delegator[m
+ 	emitter          gomit.Emitter[m
+[31m-	monitor          *monitor[m
+ 	availablePlugins *availablePlugins[m
+ 	metricCatalog    catalogsMetrics[m
+ 	pluginManager    managesPlugins[m
+[36m@@ -74,7 +73,6 @@[m [mtype runner struct {[m
+ [m
+ func newRunner() *runner {[m
+ 	r := &runner{[m
+[31m-		monitor:          newMonitor(),[m
+ 		availablePlugins: newAvailablePlugins(),[m
+ 	}[m
+ 	return r[m
+[36m@@ -96,10 +94,6 @@[m [mfunc (r *runner) AvailablePlugins() *availablePlugins {[m
+ 	return r.availablePlugins[m
+ }[m
+ [m
+[31m-func (r *runner) Monitor() *monitor {[m
+[31m-	return r.monitor[m
+[31m-}[m
+[31m-[m
+ // Adds Delegates (gomit.Delegator) for adding Runner handlers to on Start and[m
+ // unregistration on Stop.[m
+ func (r *runner) AddDelegates(delegates ...gomit.Delegator) {[m
+[36m@@ -123,8 +117,6 @@[m [mfunc (r *runner) Start() error {[m
+ 		}[m
+ 	}[m
+ [m
+[31m-	// Start the monitor[m
+[31m-	r.monitor.Start(r.availablePlugins)[m
+ 	runnerLog.WithFields(log.Fields{[m
+ 		"_block": "start",[m
+ 	}).Debug("started")[m
+[36m@@ -135,9 +127,6 @@[m [mfunc (r *runner) Start() error {[m
+ func (r *runner) Stop() []error {[m
+ 	var errs []error[m
+ [m
+[31m-	// Stop the monitor[m
+[31m-	r.monitor.Stop()[m
+[31m-[m
+ 	// TODO: Actually stop the plugins[m
+ [m
+ 	// For each delegate unregister needed handlers[m
+[36m@@ -175,6 +164,7 @@[m [mfunc (r *runner) startPlugin(p executablePlugin) (*availablePlugin, error) {[m
+ [m
+ 	// build availablePlugin[m
+ 	ap, err := newAvailablePlugin(resp, r.emitter, p)[m
+[32m+[m	[32mgo ap.CheckHealth(ap)[m
+ 	if err != nil {[m
+ 		return nil, err[m
+ 	}[m
+[1mdiff --git a/control/runner_test.go b/control/runner_test.go[m
+[1mindex 1055886..24ac0e7 100644[m
+[1m--- a/control/runner_test.go[m
+[1m+++ b/control/runner_test.go[m
+[36m@@ -462,7 +462,6 @@[m [mfunc TestRunnerPluginRunning(t *testing.T) {[m
+ 						ap.CheckHealth()[m
+ 						So(ap.failedHealthChecks, ShouldEqual, 3)[m
+ 					})[m
+[31m-[m
+ 					Convey("should return error for Run error", func() {[m
+ 						r := newRunner()[m
+ 						r.SetEmitter(new(MockEmitter))[m
+[1mdiff --git a/control/strategy/pool.go b/control/strategy/pool.go[m
+[1mindex ec7ee4b..8b049e2 100644[m
+[1m--- a/control/strategy/pool.go[m
+[1m+++ b/control/strategy/pool.go[m
+[36m@@ -74,7 +74,6 @@[m [mtype Pool interface {[m
+ type AvailablePlugin interface {[m
+ 	core.AvailablePlugin[m
+ 	CacheTTL() time.Duration[m
+[31m-	CheckHealth()[m
+ 	ConcurrencyCount() int[m
+ 	Exclusive() bool[m
+ 	Kill(r string) error[m
