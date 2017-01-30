@@ -116,6 +116,16 @@ func newAvailablePlugin(resp plugin.Response, emitter gomit.Emitter, ep executab
 				return nil, errors.New("error while creating client connection: " + e.Error())
 			}
 			ap.client = c
+		case plugin.STREAMGRPC:
+			c, e := client.NewStreamCollectorGrpcClient(
+				resp.ListenAddress,
+				DefaultClientTimeout,
+				resp.PublicKey,
+				!resp.Meta.Unsecure)
+			if e != nil {
+				return nil, errors.New("error while creating client connection: " + e.Error())
+			}
+			ap.client = c
 		default:
 			return nil, errors.New("Invalid RPCTYPE")
 		}
@@ -438,6 +448,52 @@ func (ap *availablePlugins) collectMetrics(pluginKey string, metricTypes []core.
 	p.(*availablePlugin).lastHitTime = time.Now()
 
 	return results, nil
+}
+
+func (ap *availablePlugins) streamMetrics(
+	pluginKey string,
+	metricTypes []core.Metric,
+	taskID string) (chan []core.Metric, chan error, error) {
+
+	pool, serr := ap.getPool(pluginKey)
+	if serr != nil {
+		return nil, nil, serr
+	}
+	if pool == nil {
+		return nil, nil, serror.New(ErrPoolNotFound, map[string]interface{}{"pool-key": pluginKey})
+	}
+
+	if pool.Strategy() == nil {
+		return nil, nil, errors.New("Plugin strategy not set")
+	}
+
+	config := metricTypes[0].Config()
+	cfg := map[string]ctypes.ConfigValue{}
+	if config != nil {
+		cfg = config.Table()
+	}
+
+	pool.RLock()
+	defer pool.RUnlock()
+	p, serr := pool.SelectAP(taskID, cfg)
+	if serr != nil {
+		return nil, nil, serr
+	}
+
+	cli, ok := p.(*availablePlugin).client.(client.PluginStreamCollectorClient)
+	if !ok {
+		return nil, nil, serror.New(errors.New("Invalid streaming client"))
+	}
+
+	metricChan, errChan, err := cli.StreamMetrics(metricTypes)
+	if err != nil {
+		return nil, nil, serror.New(err)
+	}
+
+	p.(*availablePlugin).hitCount++
+	p.(*availablePlugin).lastHitTime = time.Now()
+
+	return metricChan, errChan, nil
 }
 
 func (ap *availablePlugins) publishMetrics(metrics []core.Metric, pluginName string, pluginVersion int, config map[string]ctypes.ConfigValue, taskID string) []error {

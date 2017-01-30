@@ -50,10 +50,11 @@ type pluginClient interface {
 }
 
 type grpcClient struct {
-	collector rpc.CollectorClient
-	processor rpc.ProcessorClient
-	publisher rpc.PublisherClient
-	plugin    pluginClient
+	collector       rpc.CollectorClient
+	streamCollector rpc.StreamCollectorClient
+	processor       rpc.ProcessorClient
+	publisher       rpc.PublisherClient
+	plugin          pluginClient
 
 	pluginType plugin.PluginType
 	timeout    time.Duration
@@ -68,6 +69,29 @@ func NewCollectorGrpcClient(address string, timeout time.Duration, pub *rsa.Publ
 		return nil, err
 	}
 	p, err := newGrpcClient(address, int(port), timeout, plugin.CollectorPluginType)
+	if err != nil {
+		return nil, err
+	}
+
+	return p, nil
+}
+
+// NewStreamCollectorGrpcClient returns a stream collector gRPC client
+func NewStreamCollectorGrpcClient(
+	address string,
+	timeout time.Duration,
+	_ *rsa.PublicKey,
+	secure bool) (PluginStreamCollectorClient, error) {
+	address, port, err := parseAddress(address)
+	if err != nil {
+		return nil, err
+	}
+	p, err := newGrpcClient(
+		address,
+		int(port),
+		timeout,
+		plugin.StreamCollectorPluginType)
+
 	if err != nil {
 		return nil, err
 	}
@@ -148,6 +172,9 @@ func newGrpcClient(addr string, port int, timeout time.Duration, typ plugin.Plug
 	case plugin.CollectorPluginType:
 		p.collector = rpc.NewCollectorClient(conn)
 		p.plugin = p.collector
+	case plugin.StreamCollectorPluginType:
+		p.streamCollector = rpc.NewStreamCollectorClient(conn)
+		p.plugin = p.streamCollector
 	case plugin.ProcessorPluginType:
 		p.processor = rpc.NewProcessorClient(conn)
 		p.plugin = p.processor
@@ -241,12 +268,61 @@ func (g *grpcClient) CollectMetrics(mts []core.Metric) ([]core.Metric, error) {
 	return metrics, nil
 }
 
+func (g *grpcClient) StreamMetrics(mts []core.Metric) (chan []core.Metric, chan error, error) {
+	arg := &rpc.CollectArg{
+		Metrics_Arg: &rpc.MetricsArg{Metrics: NewMetrics(mts)},
+	}
+
+	s, err := g.streamCollector.StreamMetrics(context.Background())
+	if err != nil {
+		return nil, nil, err
+	}
+	err = s.Send(arg)
+	if err != nil {
+		return nil, nil, err
+	}
+	metricChan := make(chan []core.Metric)
+	errChan := make(chan error)
+	// TODO(CDR): Ensure this goroutine is cleaned up.
+	go handleStream(s, metricChan, errChan)
+	return metricChan, errChan, nil
+}
+
+func handleStream(
+	stream rpc.StreamCollector_StreamMetricsClient,
+	metricChan chan []core.Metric,
+	errChan chan error) {
+
+	for {
+		in, err := stream.Recv()
+		if err != nil {
+			errChan <- err
+			break
+		}
+		if in.Metrics_Reply != nil {
+			mts := ToCoreMetrics(in.Metrics_Reply.Metrics)
+			if len(mts) == 0 {
+				// skip empty metrics
+				continue
+			}
+		} else if in.Error != nil {
+			e := errors.New(in.Error.Error)
+			errChan <- e
+		}
+	}
+}
+
 func (g *grpcClient) GetMetricTypes(config plugin.ConfigType) ([]core.Metric, error) {
 	arg := &rpc.GetMetricTypesArg{
 		Config: ToConfigMap(config.Table()),
 	}
-	reply, err := g.collector.GetMetricTypes(getContext(g.timeout), arg)
-
+	var reply *rpc.MetricsReply
+	var err error
+	if g.streamCollector != nil {
+		reply, err = g.streamCollector.GetMetricTypes(getContext(g.timeout), arg)
+	} else {
+		reply, err = g.collector.GetMetricTypes(getContext(g.timeout), arg)
+	}
 	if err != nil {
 		return nil, err
 	}

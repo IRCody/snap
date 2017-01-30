@@ -38,6 +38,7 @@ func (p PluginType) String() string {
 
 const (
 	CollectorPluginType PluginType = iota
+	StreamCollectorPluginType
 	ProcessorPluginType
 	PublisherPluginType
 )
@@ -73,8 +74,9 @@ type RPCType int
 
 const (
 	// IMPORTANT: keep consistency across snap-plugin-lib, GRPC must be equal 2
-	NativeRPC RPCType = 0
-	GRPC      RPCType = 2
+	NativeRPC  RPCType = 0
+	GRPC       RPCType = 2
+	STREAMGRPC RPCType = 3
 )
 
 var (
