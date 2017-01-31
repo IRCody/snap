@@ -38,9 +38,9 @@ func (p PluginType) String() string {
 
 const (
 	CollectorPluginType PluginType = iota
-	StreamCollectorPluginType
 	ProcessorPluginType
 	PublisherPluginType
+	StreamCollectorPluginType
 )
 
 type RoutingStrategyType int
@@ -90,6 +90,7 @@ var (
 		"collector",
 		"processor",
 		"publisher",
+		"streamCollector",
 	}
 
 	routingStrategyTypes = [...]string{

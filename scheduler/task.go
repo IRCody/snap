@@ -84,6 +84,7 @@ type task struct {
 	stopOnFailure      int
 	eventEmitter       gomit.Emitter
 	RemoteManagers     managers
+	isStream           bool
 }
 
 //NewTask creates a Task
@@ -101,6 +102,7 @@ func newTask(s schedule.Schedule, wf *schedulerWorkflow, m *workManager, mm mana
 	if err != nil {
 		return nil, err
 	}
+	_, stream := s.(*schedule.StreamingSchedule)
 	task := &task{
 		id:               taskID,
 		name:             name,
@@ -115,6 +117,7 @@ func newTask(s schedule.Schedule, wf *schedulerWorkflow, m *workManager, mm mana
 		stopOnFailure:    DefaultStopOnFailure,
 		eventEmitter:     emitter,
 		RemoteManagers:   mgrs,
+		isStream:         stream,
 	}
 	//set options
 	for _, opt := range opts {
@@ -217,6 +220,14 @@ func (t *task) Spin() {
 	// We need to lock long enough to change state
 	t.Lock()
 	defer t.Unlock()
+	// if this task is a streaming task
+	if t.isStream {
+		t.state = core.TaskSpinning
+		t.killChan = make(chan struct{})
+		go t.stream()
+		return
+	}
+
 	// Reset the lastFireTime at each Spin.
 	// This ensures misses are tracked only forward of the point
 	// in time that a task starts spinning. E.g. stopping a task,
@@ -228,6 +239,40 @@ func (t *task) Spin() {
 		t.killChan = make(chan struct{})
 		// spin in a goroutine
 		go t.spin()
+	}
+}
+
+// Fork stream stuff here
+func (t *task) stream() {
+	// call streammetrics
+	// TODO(CDR): Deal with failure.
+	metricsChan, errChan, _ := t.metricsManager.StreamMetrics(t.id, t.workflow.tags)
+	for {
+		select {
+		case <-t.killChan:
+			t.state = core.TaskStopped
+			break
+		case mts, ok := <-metricsChan:
+			if !ok {
+				metricsChan = nil
+				break
+			}
+			if len(mts) == 0 {
+				continue
+			}
+			// TODO(CDR): deal with hitcount/failures
+			t.workflow.StreamStart(t, mts)
+		case err, ok := <-errChan:
+			if !ok {
+				errChan = nil
+				break
+			}
+			taskLogger.WithFields(log.Fields{
+				"_block":    "stream",
+				"task-id":   t.id,
+				"task-name": t.name,
+			}).Error("Error: " + err.Error())
+		}
 	}
 }
 

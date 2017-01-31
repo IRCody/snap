@@ -297,6 +297,7 @@ func handleStream(
 		in, err := stream.Recv()
 		if err != nil {
 			errChan <- err
+			fmt.Println("\n\n ERROR:", err, "\n\n")
 			break
 		}
 		if in.Metrics_Reply != nil {
@@ -305,6 +306,7 @@ func handleStream(
 				// skip empty metrics
 				continue
 			}
+			metricChan <- mts
 		} else if in.Error != nil {
 			e := errors.New(in.Error.Error)
 			errChan <- e
