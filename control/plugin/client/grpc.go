@@ -56,6 +56,9 @@ type grpcClient struct {
 	publisher       rpc.PublisherClient
 	plugin          pluginClient
 
+	// Channel used to signal death of stream collector to scheduler
+	killChan chan error
+
 	pluginType plugin.PluginType
 	timeout    time.Duration
 	conn       *grpc.ClientConn
@@ -91,7 +94,7 @@ func NewStreamCollectorGrpcClient(
 		int(port),
 		timeout,
 		plugin.StreamCollectorPluginType)
-
+	p.killChan = make(chan error)
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +209,15 @@ func (g *grpcClient) SetKey() error {
 	return nil
 }
 
+// Killed closes the killChan for a streaming rpc
+func (g *grpcClient) Killed() {
+	if g.killChan != nil {
+		close(g.killChan)
+	}
+}
+
 func (g *grpcClient) Kill(reason string) error {
+
 	_, err := g.plugin.Kill(getContext(g.timeout), &rpc.KillArg{Reason: reason})
 	g.conn.Close()
 	if err != nil {
@@ -283,6 +294,7 @@ func (g *grpcClient) StreamMetrics(mts []core.Metric) (chan []core.Metric, chan 
 	}
 	metricChan := make(chan []core.Metric)
 	errChan := make(chan error)
+	g.killChan = errChan
 	// TODO(CDR): Ensure this goroutine is cleaned up.
 	go handleStream(s, metricChan, errChan)
 	return metricChan, errChan, nil
@@ -297,7 +309,6 @@ func handleStream(
 		in, err := stream.Recv()
 		if err != nil {
 			errChan <- err
-			fmt.Println("\n\n ERROR:", err, "\n\n")
 			break
 		}
 		if in.Metrics_Reply != nil {

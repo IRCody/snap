@@ -244,38 +244,82 @@ func (t *task) Spin() {
 
 // Fork stream stuff here
 func (t *task) stream() {
-	// call streammetrics
-	// TODO(CDR): Deal with failure.
-	metricsChan, errChan, _ := t.metricsManager.StreamMetrics(t.id, t.workflow.tags)
+	var consecutiveFailures int
 	for {
-		select {
-		case <-t.killChan:
-			t.state = core.TaskStopped
-			break
-		case mts, ok := <-metricsChan:
-			if !ok {
-				metricsChan = nil
+		metricsChan, errChan, err := t.metricsManager.StreamMetrics(t.id, t.workflow.tags)
+		if err != nil {
+			consecutiveFailures++
+			e := checkTaskFailures(t, consecutiveFailures)
+			if e != nil {
+				return
+			}
+			// TODO(CDR): Don't use timer.
+			time.Sleep(time.Second)
+			continue
+		} else {
+			consecutiveFailures = 0
+		}
+		for {
+			if errChan == nil {
 				break
 			}
-			if len(mts) == 0 {
-				continue
-			}
-			// TODO(CDR): deal with hitcount/failures
-			t.workflow.StreamStart(t, mts)
-		case err, ok := <-errChan:
-			if !ok {
-				errChan = nil
+			select {
+			case <-t.killChan:
+				t.state = core.TaskStopped
 				break
+			case mts, ok := <-metricsChan:
+				if !ok {
+					metricsChan = nil
+					break
+				}
+				if len(mts) == 0 {
+					continue
+				}
+				t.hitCount++
+				consecutiveFailures = 0
+				t.workflow.StreamStart(t, mts)
+			case err, ok := <-errChan:
+				if !ok {
+					errChan = nil
+					continue
+				}
+				taskLogger.WithFields(log.Fields{
+					"_block":    "stream",
+					"task-id":   t.id,
+					"task-name": t.name,
+				}).Error("Error: " + err.Error())
+				consecutiveFailures++
+				e := checkTaskFailures(t, consecutiveFailures)
+				if e != nil {
+					return
+				}
 			}
-			taskLogger.WithFields(log.Fields{
-				"_block":    "stream",
-				"task-id":   t.id,
-				"task-name": t.name,
-			}).Error("Error: " + err.Error())
 		}
 	}
 }
 
+func checkTaskFailures(t *task, consecutiveFailures int) error {
+	if t.stopOnFailure >= 0 && consecutiveFailures >= t.stopOnFailure {
+		taskLogger.WithFields(log.Fields{
+			"_block":               "spin",
+			"task-id":              t.id,
+			"task-name":            t.name,
+			"consecutive failures": consecutiveFailures,
+			"error":                t.lastFailureMessage,
+		}).Error(ErrTaskDisabledOnFailures)
+		// You must lock on state change for tasks
+		t.Lock()
+		t.state = core.TaskDisabled
+		t.Unlock()
+		// Send task disabled event
+		event := new(scheduler_event.TaskDisabledEvent)
+		event.TaskID = t.id
+		event.Why = fmt.Sprintf("Task disabled with error: %s", t.lastFailureMessage)
+		defer t.eventEmitter.Emit(event)
+		return ErrTaskDisabledOnFailures
+	}
+	return nil
+}
 func (t *task) Stop() {
 	t.Lock()
 	defer t.Unlock()

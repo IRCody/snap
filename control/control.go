@@ -1054,7 +1054,7 @@ func (p *pluginControl) StreamMetrics(
 			return nil, nil, errs
 		}
 	}
-	return metricChan, errChan, errs
+	return metricChan, errChan, nil
 }
 
 // PublishMetrics
