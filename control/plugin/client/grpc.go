@@ -58,6 +58,8 @@ type grpcClient struct {
 
 	// Channel used to signal death of stream collector to scheduler
 	killChan chan error
+	// stream connection to stream collector
+	stream rpc.StreamCollector_StreamMetricsClient
 
 	pluginType plugin.PluginType
 	timeout    time.Duration
@@ -279,6 +281,30 @@ func (g *grpcClient) CollectMetrics(mts []core.Metric) ([]core.Metric, error) {
 	return metrics, nil
 }
 
+func (g *grpcClient) UpdateCollectedMetrics(mts []core.Metric) error {
+	if g.stream != nil {
+		arg := &rpc.CollectArg{
+			Metrics_Arg: &rpc.MetricsArg{Metrics: NewMetrics(mts)},
+		}
+		err = g.stream.Send(arg)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func (g *grpcClient) UpdatePluginConfig(bytes []byte) error {
+	if g.stream != nil {
+		arg := &rpc.CollectArg{
+			Other: bytes,
+		}
+		err = g.stream.Send(arg)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
 func (g *grpcClient) StreamMetrics(mts []core.Metric) (chan []core.Metric, chan error, error) {
 	arg := &rpc.CollectArg{
 		Metrics_Arg: &rpc.MetricsArg{Metrics: NewMetrics(mts)},
@@ -294,19 +320,19 @@ func (g *grpcClient) StreamMetrics(mts []core.Metric) (chan []core.Metric, chan 
 	}
 	metricChan := make(chan []core.Metric)
 	errChan := make(chan error)
-	g.killChan = errChan
-	// TODO(CDR): Ensure this goroutine is cleaned up.
-	go handleStream(s, metricChan, errChan)
+	doneChan := make(chan struct{})
+	g.killChan = doneChan
+	g.stream = s
+	go handleInStream(s, metricChan, errChan)
 	return metricChan, errChan, nil
 }
 
-func handleStream(
-	stream rpc.StreamCollector_StreamMetricsClient,
-	metricChan chan []core.Metric,
+func (g *grpcClient) handleInStream(
+	metricChan chan []core.Metrici,
 	errChan chan error) {
-
-	for {
-		in, err := stream.Recv()
+	done = false
+	for !done {
+		in, err := g.stream.Recv()
 		if err != nil {
 			errChan <- err
 			break
@@ -321,6 +347,13 @@ func handleStream(
 		} else if in.Error != nil {
 			e := errors.New(in.Error.Error)
 			errChan <- e
+		}
+		select {
+		case _, ok := <-g.doneChan:
+			if !ok {
+				done = true
+			}
+		default:
 		}
 	}
 }

@@ -32,6 +32,7 @@ import (
 
 	"github.com/intelsdi-x/snap/core"
 	"github.com/intelsdi-x/snap/core/cdata"
+	"github.com/intelsdi-x/snap/core/control_event"
 	"github.com/intelsdi-x/snap/core/ctypes"
 )
 
@@ -393,6 +394,21 @@ func (p *pluginConfig) getPluginConfigDataNode(pluginType core.PluginType, name 
 	}).Debug("Getting plugin config")
 
 	return p.pluginCache[key]
+}
+
+// emits a ConfigUpdateEvent with the provided info
+func (p *pluginConfig) mitConfigUpdateEvent(
+	pluginType core.PluginType,
+	name string,
+	ver int,
+	key string) {
+	e := control_event.PluginConfigUpdatedEvent{
+		Type:    pluginType,
+		Name:    name,
+		version: ver,
+		key:     key,
+	}
+	p.emitter.emit(e)
 }
 
 func unmarshalPluginConfig(typ string, p *pluginConfig, t map[string]interface{}) error {

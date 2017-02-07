@@ -35,7 +35,19 @@ const (
 	MetricUnsubscribed       = "Control.MetricUnsubscribed"
 	HealthCheckFailed        = "Control.PluginHealthCheckFailed"
 	MoveSubscription         = "Control.PluginSubscriptionMoved"
+	PluginConfigUpdate       = "Control.PluginConfigUpdated"
 )
+
+type PluginConfigUpdatedEvent struct {
+	Name    string
+	Version int
+	Type    int
+	Key     string
+}
+
+func (e PluginConfigUpdatedEvent) Namespace() string {
+	return ConfigUpdate
+}
 
 type StartPluginEvent struct {
 	Name    string
