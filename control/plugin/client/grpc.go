@@ -57,7 +57,7 @@ type grpcClient struct {
 	plugin          pluginClient
 
 	// Channel used to signal death of stream collector to scheduler
-	killChan chan error
+	killChan chan struct{}
 	// stream connection to stream collector
 	stream rpc.StreamCollector_StreamMetricsClient
 
@@ -96,7 +96,7 @@ func NewStreamCollectorGrpcClient(
 		int(port),
 		timeout,
 		plugin.StreamCollectorPluginType)
-	p.killChan = make(chan error)
+	p.killChan = make(chan struct{})
 	if err != nil {
 		return nil, err
 	}
@@ -286,7 +286,7 @@ func (g *grpcClient) UpdateCollectedMetrics(mts []core.Metric) error {
 		arg := &rpc.CollectArg{
 			Metrics_Arg: &rpc.MetricsArg{Metrics: NewMetrics(mts)},
 		}
-		err = g.stream.Send(arg)
+		err := g.stream.Send(arg)
 		if err != nil {
 			return err
 		}
@@ -298,7 +298,7 @@ func (g *grpcClient) UpdatePluginConfig(bytes []byte) error {
 		arg := &rpc.CollectArg{
 			Other: bytes,
 		}
-		err = g.stream.Send(arg)
+		err := g.stream.Send(arg)
 		if err != nil {
 			return err
 		}
@@ -308,6 +308,30 @@ func (g *grpcClient) UpdatePluginConfig(bytes []byte) error {
 func (g *grpcClient) StreamMetrics(mts []core.Metric) (chan []core.Metric, chan error, error) {
 	arg := &rpc.CollectArg{
 		Metrics_Arg: &rpc.MetricsArg{Metrics: NewMetrics(mts)},
+	}
+	if len(mts) == 0 {
+		return nil, nil, errors.New("No metrics requested to stream")
+	}
+
+	mt := mts[0]
+	if cfg := mt.Config(); cfg != nil {
+		values := cfg.Table()
+		if values != nil {
+			maxCollectDuration, ok := values["MaxCollectDuration"]
+			if ok {
+				t, ok := maxCollectDuration.(*ctypes.ConfigValueInt)
+				if ok {
+					arg.MaxCollectDuration = int64(t.Value)
+				}
+			}
+			maxMetricsBuffer, ok := values["MaxMetricsBuffer"]
+			if ok {
+				t, ok := maxMetricsBuffer.(*ctypes.ConfigValueInt)
+				if ok {
+					arg.MaxMetricsBuffer = int64(t.Value)
+				}
+			}
+		}
 	}
 
 	s, err := g.streamCollector.StreamMetrics(context.Background())
@@ -323,14 +347,14 @@ func (g *grpcClient) StreamMetrics(mts []core.Metric) (chan []core.Metric, chan 
 	doneChan := make(chan struct{})
 	g.killChan = doneChan
 	g.stream = s
-	go handleInStream(s, metricChan, errChan)
+	go g.handleInStream(metricChan, errChan)
 	return metricChan, errChan, nil
 }
 
 func (g *grpcClient) handleInStream(
-	metricChan chan []core.Metrici,
+	metricChan chan []core.Metric,
 	errChan chan error) {
-	done = false
+	done := false
 	for !done {
 		in, err := g.stream.Recv()
 		if err != nil {
@@ -349,7 +373,7 @@ func (g *grpcClient) handleInStream(
 			errChan <- e
 		}
 		select {
-		case _, ok := <-g.doneChan:
+		case _, ok := <-g.killChan:
 			if !ok {
 				done = true
 			}

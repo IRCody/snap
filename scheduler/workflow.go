@@ -289,6 +289,11 @@ func (s *schedulerWorkflow) StreamStart(t *task, metrics []core.Metric) {
 		configDataTree: t.workflow.configTree,
 		tags:           t.workflow.tags,
 	}
+	// Send event
+	event := new(scheduler_event.MetricCollectedEvent)
+	event.TaskID = t.id
+	event.Metrics = j.metrics
+	defer s.eventEmitter.Emit(event)
 	workJobs(s.processNodes, s.publishNodes, t, j)
 }
 
