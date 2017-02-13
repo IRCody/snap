@@ -459,7 +459,9 @@ func (ap *availablePlugins) collectMetrics(pluginKey string, metricTypes []core.
 func (ap *availablePlugins) streamMetrics(
 	pluginKey string,
 	metricTypes []core.Metric,
-	taskID string) (chan []core.Metric, chan error, error) {
+	taskID string,
+	maxCollectDuration time.Duration,
+	maxMetricsBuffer int64) (chan []core.Metric, chan error, error) {
 
 	pool, serr := ap.getPool(pluginKey)
 	if serr != nil {
@@ -495,9 +497,14 @@ func (ap *availablePlugins) streamMetrics(
 	if err != nil {
 		return nil, nil, serror.New(err)
 	}
-
-	p.(*availablePlugin).hitCount++
-	p.(*availablePlugin).lastHitTime = time.Now()
+	err = cli.UpdateCollectDuration(maxCollectDuration)
+	if err != nil {
+		return nil, nil, serror.New(err)
+	}
+	err = cli.UpdateMetricsBuffer(maxMetricsBuffer)
+	if err != nil {
+		return nil, nil, serror.New(err)
+	}
 
 	return metricChan, errChan, nil
 }

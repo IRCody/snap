@@ -1013,7 +1013,9 @@ func (p *pluginControl) CollectMetrics(id string, allTags map[string]map[string]
 
 func (p *pluginControl) StreamMetrics(
 	id string,
-	allTags map[string]map[string]string) (chan []core.Metric, chan error, []error) {
+	allTags map[string]map[string]string,
+	maxCollectDuration time.Duration,
+	maxMetricsBuffer int64) (chan []core.Metric, chan error, []error) {
 	if !p.Started {
 		return nil, nil, []error{ErrControllerNotStarted}
 	}
@@ -1048,7 +1050,7 @@ func (p *pluginControl) StreamMetrics(
 						pmt.plugin.Version()))
 			}
 		}
-		metricChan, errChan, err = p.pluginRunner.AvailablePlugins().streamMetrics(pluginKey, pmt.metricTypes, id)
+		metricChan, errChan, err = p.pluginRunner.AvailablePlugins().streamMetrics(pluginKey, pmt.metricTypes, id, maxCollectDuration, maxMetricsBuffer)
 		if err != nil {
 			errs = append(errs, err)
 			return nil, nil, errs

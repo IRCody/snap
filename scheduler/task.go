@@ -85,6 +85,9 @@ type task struct {
 	eventEmitter       gomit.Emitter
 	RemoteManagers     managers
 	isStream           bool
+
+	maxCollectDuration time.Duration
+	maxMetricsBuffer   int64
 }
 
 //NewTask creates a Task
@@ -134,6 +137,22 @@ func (t *task) Option(opts ...core.TaskOption) core.TaskOption {
 		previous = opt(t)
 	}
 	return previous
+}
+
+func (t *task) MaxCollectDuration() time.Duration {
+	return t.maxCollectDuration
+}
+
+func (t *task) SetMaxCollectDuration(ti time.Duration) {
+	t.maxCollectDuration = ti
+}
+
+func (t *task) MaxMetricsBuffer() int64 {
+	return t.maxMetricsBuffer
+}
+
+func (t *task) SetMaxMetricsBuffer(i int64) {
+	t.maxMetricsBuffer = i
 }
 
 //Returns the name of the task
@@ -246,14 +265,21 @@ func (t *task) Spin() {
 func (t *task) stream() {
 	var consecutiveFailures int
 	for {
-		metricsChan, errChan, err := t.metricsManager.StreamMetrics(t.id, t.workflow.tags)
+		metricsChan, errChan, err := t.metricsManager.StreamMetrics(
+			t.id,
+			t.workflow.tags,
+			t.maxCollectDuration,
+			t.maxMetricsBuffer)
 		if err != nil {
 			consecutiveFailures++
 			e := checkTaskFailures(t, consecutiveFailures)
 			if e != nil {
 				return
 			}
-			// TODO(CDR): Don't use timer.
+			// If we are unsuccessful at setting up the stream
+			// wait for a second and then try again until either
+			// the connection is successful or we pass the
+			// acceptable number of consecutive failures
 			time.Sleep(time.Second)
 			continue
 		} else {

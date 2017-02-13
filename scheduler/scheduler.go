@@ -27,6 +27,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	log "github.com/Sirupsen/logrus"
 
@@ -100,7 +101,7 @@ type collectsMetrics interface {
 }
 
 type streamsMetrics interface {
-	StreamMetrics(string, map[string]map[string]string) (chan []core.Metric, chan error, []error)
+	StreamMetrics(string, map[string]map[string]string, time.Duration, int64) (chan []core.Metric, chan error, []error)
 }
 
 type publishesMetrics interface {

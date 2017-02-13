@@ -54,7 +54,7 @@ service StreamCollector {
 message CollectArg{
 	// Request these metrics to be collected on the plugins schedule
 	MetricsArg Metrics_Arg = 1;
-	// Set minimum collection duration --duration in ms
+	// Set minimum collection duration --duration in ns
 	int64 MaxCollectDuration = 2;
 	// Set max number of metrics to buffer before forcing send
 	// 0 means no forced send

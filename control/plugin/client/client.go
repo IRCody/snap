@@ -20,6 +20,8 @@ limitations under the License.
 package client
 
 import (
+	"time"
+
 	"github.com/intelsdi-x/snap/control/plugin"
 	"github.com/intelsdi-x/snap/control/plugin/cpolicy"
 	"github.com/intelsdi-x/snap/core"
@@ -46,6 +48,9 @@ type PluginStreamCollectorClient interface {
 	StreamMetrics([]core.Metric) (chan []core.Metric, chan error, error)
 	GetMetricTypes(plugin.ConfigType) ([]core.Metric, error)
 	UpdateCollectedMetrics([]core.Metric) error
+	UpdatePluginConfig([]byte) error
+	UpdateMetricsBuffer(int64) error
+	UpdateCollectDuration(time.Duration) error
 	Killed()
 }
 

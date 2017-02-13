@@ -305,6 +305,31 @@ func (g *grpcClient) UpdatePluginConfig(bytes []byte) error {
 	}
 	return nil
 }
+func (g *grpcClient) UpdateCollectDuration(maxCollectDuration time.Duration) error {
+	if g.stream != nil {
+		arg := &rpc.CollectArg{
+			MaxCollectDuration: maxCollectDuration.Nanoseconds(),
+		}
+		err := g.stream.Send(arg)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func (g *grpcClient) UpdateMetricsBuffer(maxMetricsBuffer int64) error {
+	if g.stream != nil {
+		arg := &rpc.CollectArg{
+			MaxMetricsBuffer: maxMetricsBuffer,
+		}
+		err := g.stream.Send(arg)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (g *grpcClient) StreamMetrics(mts []core.Metric) (chan []core.Metric, chan error, error) {
 	arg := &rpc.CollectArg{
 		Metrics_Arg: &rpc.MetricsArg{Metrics: NewMetrics(mts)},
