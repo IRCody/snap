@@ -285,7 +285,8 @@ func (t *task) stream() {
 		} else {
 			consecutiveFailures = 0
 		}
-		for {
+		done := false
+		for !done {
 			if errChan == nil {
 				break
 			}
@@ -304,17 +305,19 @@ func (t *task) stream() {
 				t.hitCount++
 				consecutiveFailures = 0
 				t.workflow.StreamStart(t, mts)
-			case err, ok := <-errChan:
-				if !ok {
-					errChan = nil
-					continue
-				}
+			case err := <-errChan:
 				taskLogger.WithFields(log.Fields{
 					"_block":    "stream",
 					"task-id":   t.id,
 					"task-name": t.name,
 				}).Error("Error: " + err.Error())
 				consecutiveFailures++
+				if err.Error() == "connection broken" {
+					// Wait here before trying to reconnect to allow time
+					// for plugin restarts.
+					time.Sleep(time.Second * 3)
+					done = true
+				}
 				e := checkTaskFailures(t, consecutiveFailures)
 				if e != nil {
 					return

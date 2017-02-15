@@ -379,32 +379,31 @@ func (g *grpcClient) StreamMetrics(mts []core.Metric) (chan []core.Metric, chan 
 func (g *grpcClient) handleInStream(
 	metricChan chan []core.Metric,
 	errChan chan error) {
-	done := false
-	for !done {
-		in, err := g.stream.Recv()
-		if err != nil {
-			errChan <- err
-			break
-		}
-		if in.Metrics_Reply != nil {
-			mts := ToCoreMetrics(in.Metrics_Reply.Metrics)
-			if len(mts) == 0 {
-				// skip empty metrics
-				continue
+	go func() {
+		done := false
+		for !done {
+			in, err := g.stream.Recv()
+			if err != nil {
+				errChan <- err
+				break
 			}
-			metricChan <- mts
-		} else if in.Error != nil {
-			e := errors.New(in.Error.Error)
-			errChan <- e
-		}
-		select {
-		case _, ok := <-g.killChan:
-			if !ok {
-				done = true
+			if in.Metrics_Reply != nil {
+				mts := ToCoreMetrics(in.Metrics_Reply.Metrics)
+				if len(mts) == 0 {
+					// skip empty metrics
+					continue
+				}
+				metricChan <- mts
+			} else if in.Error != nil {
+				e := errors.New(in.Error.Error)
+				errChan <- e
 			}
-		default:
 		}
-	}
+	}()
+
+	<-g.killChan
+	errChan <- errors.New("connection broken")
+
 }
 
 func (g *grpcClient) GetMetricTypes(config plugin.ConfigType) ([]core.Metric, error) {
